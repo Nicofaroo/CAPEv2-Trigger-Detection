@@ -1,19 +1,32 @@
+#Importo la clase base Processing de CAPE. Esto va a ser un modulo processing, es decir,
+#que se ejecuta despeusd del analisis dinamico. Cuando ya tiene datos recogidos.
 from lib.cuckoo.common.abstracts import Processing
 
-
+#Defino la clase nueva llamada TriggerProfiler que hereda de Processign.
 class TriggerProfiler(Processing):
+    #Defino este modulo como el ultimo en ejecutarse en processing.
     order = 99
 
+    #Funcion de proteccion. Si value es realmente una lista, la devuelve tal cual.
+    #Sino devuelve una lista vacia.
     def _safe_list(self, value):
         return value if isinstance(value, list) else []
 
+    #Aqui extraigo los nombres de las APIs observadas.En CAPE, dentro de 
+    #behaviour.process[].calls[] se registran llamadas del programa a APIs de Windows
     def _collect_api_names(self, behavior, max_calls=8000):
         apis = []
         total = 0
 
+	#Obtengo la lista de procesos del bloque behaviour.
         processes = self._safe_list(behavior.get("processes", []))
+
+	#Recorro cada proceso y para cada uno obtengo su lista de llamadas API.
         for proc in processes:
             calls = self._safe_list(proc.get("calls", []))
+
+	    #Para cada llamada, cojo el nombre, lo convierto a string, lo paso a
+	    #mayusculas y le quito los espacios
             for call in calls:
                 api = str(call.get("api", "")).lower().strip()
                 if api:
@@ -22,13 +35,18 @@ class TriggerProfiler(Processing):
                 if total >= max_calls:
                     return apis
 
+	#Devuelvo la lista completa de APIs recogidas.
         return apis
 
+    #Defino una lista de claves de bloques network que considero relevantes
     def _network_present(self, network):
         interesting = [
             "dns", "http", "https", "tcp", "udp", "icmp",
             "smtp", "irc", "hosts", "domains", "tls"
         ]
+
+	#Reviso una a una esas claves. Si contienen una lista no vacia o un diccionario no vacio
+	#entonces significa que si ha habido actividad de red.
         for key in interesting:
             value = network.get(key)
             if isinstance(value, list) and value:
@@ -37,24 +55,37 @@ class TriggerProfiler(Processing):
                 return True
         return False
 
+    #Funcion central. Sirve para encontrar coincidencias entre una lista de cadenas values y
+    #un conjunto de patrones needles
     def _count_matches(self, values, needles):
         count = 0
+
+	#Recorro cada valor v y compruebo si contiene alguno de los patrones n.
         for v in values:
             for n in needles:
                 if n in v:
                     count += 1
                     break
+
+	#Devuelvo cuantos elementos han coincidido.
         return count
 
+    #Version booleana de la anterior. Devuelve true si hay al menos una coincidencia.
     def _any_match(self, values, needles):
         return self._count_matches(values, needles) > 0
 
+    #Redondea una puntuacion a tres decimales y limita a un mazimo de 1.0
     def _cap(self, x, maxv=1.0):
         return min(round(x, 3), maxv)
 
+    #Aqui defino la funcion principal del modulo.
     def run(self):
+
+	#Primero le digo a CAPE que el resultado de este modulo se guradara bajo esta clave.
         self.key = "trigger_profile"
 
+	#Defuno la estructura de los resultados. Inicializo la decision global junto a las
+	#cinco categorias de triggers. Cada categoria tendra su propia lista de evidencias.
         results = {
             "suspected": False,
             "primary": None,
@@ -79,20 +110,29 @@ class TriggerProfiler(Processing):
             ],
         }
 
+	#Aqui recojo distintas partes del informe generado por cape
+	#Signatures - firmas detectadas por CAPE
+	#Behavior - bloque general del comportamiento
+	#Summary - resumen del comportamiento
+	#Network - actividad de red
+	#Info - metadatos del analisis
         signatures = self._safe_list(self.results.get("signatures", []))
         behavior = self.results.get("behavior", {}) or {}
         summary = behavior.get("summary") or {}
         network = self.results.get("network", {}) or {}
         info = self.results.get("info", {}) or {}
 
+	#Construyo un conjutno set con los nombres de las firmas en minuscula
         sig_names = {
             str(sig.get("name", "")).lower()
             for sig in signatures
             if isinstance(sig, dict)
         }
 
+	#Llamo a la funcion auxiliar para obtener todas las APIs observadas del bloqeu de comportamiento
         api_names = self._collect_api_names(behavior)
 
+	#Cojo listas del resumen, las convierto a listas seguras, luego a string y paso todo a minusculas
         files = [str(x).lower() for x in self._safe_list(summary.get("files", []))]
         read_files = [str(x).lower() for x in self._safe_list(summary.get("read_files", []))]
         write_files = [str(x).lower() for x in self._safe_list(summary.get("write_files", []))]
@@ -104,6 +144,7 @@ class TriggerProfiler(Processing):
         executed_commands = [str(x).lower() for x in self._safe_list(summary.get("executed_commands", []))]
         mutexes = [str(x).lower() for x in self._safe_list(summary.get("mutexes", []))]
 
+	#Aqui decido si hay actividad de red relevante.
         has_network = self._network_present(network)
         low_activity = (
             not has_network
@@ -128,10 +169,12 @@ class TriggerProfiler(Processing):
             "timeout ", "ping -n", "start-sleep", "sleep "
         }
 
+	#Firmas con sleep o delay
         if self._any_match(sig_names, {"sleep", "delay"}):
             results["scores"]["time"] += 0.45
             results["evidence"]["time"].append("Sleep or delay-related signature matched")
 
+	#APIs temporales
         time_api_count = self._count_matches(api_names, time_api_needles)
         if time_api_count >= 1:
             results["scores"]["time"] += 0.20
@@ -140,10 +183,12 @@ class TriggerProfiler(Processing):
             results["scores"]["time"] += 0.15
             results["evidence"]["time"].append("Multiple time-check or delay APIs observed")
 
+	#Comandos de delay
         if self._any_match(executed_commands, time_cmd_needles):
             results["scores"]["time"] += 0.25
             results["evidence"]["time"].append("Command-line delay primitive observed")
 
+	#Duracion larga con poca actividad
         duration = info.get("duration")
         if isinstance(duration, (int, float)) and duration > 180 and low_activity:
             results["scores"]["time"] += 0.10
