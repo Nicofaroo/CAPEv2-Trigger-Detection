@@ -8,78 +8,70 @@ log = logging.getLogger(__name__)
 
 class TriggerGraph(Report):
     """
-    Genera un gráfico de la línea de tiempo de ejecución de APIs de reconocimiento (Triggers).
+    Genera un gráfico vectorial (SVG) de la línea de tiempo de ejecución de APIs.
+    Filtra repeticiones consecutivas para evitar gráficos gigantes ilegibles.
     """
-    # El orden determina cuándo se ejecuta. Lo ponemos alto para asegurar 
-    # que todos los datos de comportamiento ya están procesados.
     order = 9000 
 
     def run(self, results):
-        # 1. Definir qué APIs nos interesan como "Disparadores"
         trigger_apis = [
-            "GetSystemInfo", 
-            "GetCursorPos", 
-            "IsDebuggerPresent",
-            "GetTickCount",
-            "CheckRemoteDebuggerPresent",
-            "DeviceIoControl" # A menudo usado para ver tamaños de disco
+            "GetSystemInfo", "GetCursorPos", "IsDebuggerPresent",
+            "GetTickCount", "CheckRemoteDebuggerPresent", "DeviceIoControl"
         ]
 
-        # Iniciar el lienzo del gráfico
-        dot = Digraph(comment='Traza de Ejecucion del Malware', format='png')
-        dot.attr(rankdir='TB') # Formato de arriba hacia abajo (Top-Bottom)
+        # CAMBIO CLAVE: Formato SVG y fondo blanco forzado
+        dot = Digraph(comment='Traza de Ejecucion del Malware', format='svg')
+        dot.attr(rankdir='TB', bgcolor='white', fontname='Arial')
 
-        # 2. Extraer los datos de comportamiento del análisis de CAPE
         behavior = results.get("behavior", {})
         processes = behavior.get("processes", [])
 
         if not processes:
-            log.warning("No hay procesos en behavior para generar el grafo de triggers.")
             return
 
-        # 3. Iterar por cada proceso analizado
-        for proc in processes:
-            proc_name = proc.get("process_name", "Unknown.exe")
-            calls = proc.get("calls", [])
+        for proc in enumerate(processes):
+            p_idx, p_data = proc
+            proc_name = p_data.get("process_name", "Unknown.exe")
+            calls = p_data.get("calls", [])
             
             if not calls:
                 continue
 
-            # Crear el nodo inicial del proceso
-            prev_node_id = f"start_{proc['process_id']}"
-            dot.node(prev_node_id, f"INICIO\n{proc_name}", shape='Mdiamond', style='filled', fillcolor='lightblue')
+            prev_node_id = f"start_{p_data['process_id']}_{p_idx}"
+            dot.node(prev_node_id, f"INICIO: {proc_name} (PID: {p_data['process_id']})", 
+                     shape='Mdiamond', style='filled', fillcolor='lightblue')
 
-            # 4. Rastrear la línea de tiempo
+            # Anti-ruido: Control de repeticiones
+            last_api = None
+            last_ret = None
+
             for call in calls:
                 api_name = call["api"]
                 
-                # Si la llamada es un disparador, la añadimos al árbol
                 if api_name in trigger_apis:
-                    # Extraer el valor de retorno que forzó la decisión
-                    ret_val = call.get("return", "Desconocido")
+                    ret_val = str(call.get("return", "None"))
                     
-                    # Crear un ID único para el nodo basado en el tiempo
-                    node_id = f"node_{call.get('time', id(call))}"
+                    # Si es la misma API con el mismo resultado, saltamos (Deduplicación)
+                    if api_name == last_api and ret_val == last_ret:
+                        continue
                     
-                    # La etiqueta visual que verá el usuario
-                    etiqueta = f"API: {api_name}\nRespuesta (Ret): {ret_val}"
+                    node_id = f"node_{call.get('time', id(call))}_{p_idx}"
+                    etiqueta = f"API: {api_name}\nRetorno: {ret_val}"
                     
-                    # Dibujar nodo y conectar con el anterior
-                    dot.node(node_id, etiqueta, shape='box')
+                    dot.node(node_id, etiqueta, shape='box', style='filled', fillcolor='white')
                     dot.edge(prev_node_id, node_id)
                     
-                    # Avanzar el puntero
                     prev_node_id = node_id
+                    last_api = api_name
+                    last_ret = ret_val
 
-            # Nodo final por proceso
-            end_node_id = f"end_{proc['process_id']}"
-            dot.node(end_node_id, f"FIN / SALIDA", shape='Msquare', style='filled', fillcolor='lightgrey')
+            end_node_id = f"end_{p_data['process_id']}_{p_idx}"
+            dot.node(end_node_id, "FIN DE TRAZA", shape='Msquare', style='filled', fillcolor='lightgrey')
             dot.edge(prev_node_id, end_node_id)
 
-        # 5. Guardar la imagen generada en la carpeta de reportes del análisis
         try:
             output_path = os.path.join(self.reports_path, "trigger_cfg")
-            dot.render(output_path, cleanup=True) # Cleanup borra el archivo intermedio y deja solo el PNG
-            log.info("Gráfico de Triggers generado exitosamente en %s.png", output_path)
+            dot.render(output_path, cleanup=True)
+            log.info(f"[TriggerGraph] Grafo SVG generado en {output_path}.svg")
         except Exception as e:
-            raise CuckooReportError(f"Error generando el gráfico con Graphviz: {e}")
+            log.error(f"[TriggerGraph] Error al generar SVG: {e}")
