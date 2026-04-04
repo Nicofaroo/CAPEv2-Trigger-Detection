@@ -18,20 +18,26 @@ class TriggerGraph(Report):
             "GetSystemInfo", "GetCursorPos", "IsDebuggerPresent",
             "GetTickCount", "CheckRemoteDebuggerPresent", "DeviceIoControl"
         ]
-
+	#Inicializo el grafo en modo SVG
         dot = Digraph(comment='Arbol de Decisiones de Triggers', format='svg')
+	#Configuro atributos: de arriba a abajo, fondo blanco y fuente arial
         dot.attr(rankdir='TB', bgcolor='white', fontname='Arial')
 
+	#Extraigo el diccionario behavior de los resultados
         behavior = results.get("behavior", {})
+	#Extraigo la lista de procesos dentro de behavior
         processes = behavior.get("processes", [])
 
+	#Compruebo si la lista de procesos esta vacia. Si no hay procesos, termina la ejecucion sin hacer nada.
         if not processes:
             return
 
+	#Itero sobre sobre cada proceso, obteniendo su indice y sus datos
         for p_idx, p_data in enumerate(processes):
             proc_name = p_data.get("process_name", "Unknown.exe")
-            calls = p_data.get("calls", [])
+            calls = p_data.get("calls", []) #Obtengo la lista de llamadas API de este proceso.
             
+	   #Si el proceso no tiene llamadas APIs registradas pasa al siguiente ignorando al actual.
             if not calls:
                 continue
 
