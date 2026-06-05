@@ -586,6 +586,8 @@ class Human(Auxiliary, Thread):
             nohuman = self.options.get("nohuman")
             if nohuman:
                 return True
+            if self.options.get("human_improved"):
+                return True
             doc = False
             if hasattr(self.config, "file_type"):
                 file_type = self.config.file_type
