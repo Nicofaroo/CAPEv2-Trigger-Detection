@@ -588,6 +588,8 @@ class Human(Auxiliary, Thread):
                 return True
             if self.options.get("human_improved"):
                 return True
+            if self.options.get("human_robotic"):
+                return True
             doc = False
             if hasattr(self.config, "file_type"):
                 file_type = self.config.file_type
