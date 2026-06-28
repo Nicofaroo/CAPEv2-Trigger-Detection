@@ -1,66 +1,80 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import contextlib
-import logging
-import math
-import random
-import time
-import traceback
+import contextlib #Importo contextlib para suprimir excepciones
+import logging # Importo logging para poder escribir mensajes en el log de CAPE
+import math # Importo math para usar senos, cosenos y angulos para mover el cursor
+import random # Importo random para elejir destinos duraicionese y probabilidades al azar
+import time # Importo time para poder hacer pausas y medir duraciones
+import traceback # Importo traceback para poder volcar el error completo si algo falla dentro del hilo
 from ctypes import WINFUNCTYPE, byref, c_bool, c_size_t, create_unicode_buffer, memmove, sizeof, wintypes
-from threading import Thread
+from threading import Thread # Importo Thread para poder crer un hilo que se ejecute en paralelocon el malware
 
-from lib.common.abstracts import Auxiliary
+from lib.common.abstracts import Auxiliary # Me traigo la clase base de la que heredan los modulos auxiliares de CAPE
 from lib.common.defines import (
-    BM_CLICK,
-    BM_GETCHECK,
-    BM_SETCHECK,
-    BST_CHECKED,
-    GMEM_MOVEABLE,
-    KERNEL32,
-    USER32,
-    WM_CLOSE,
-    WM_GETTEXT,
-    WM_GETTEXTLENGTH,
+    BM_CLICK, # El codigo de mensaje para hacer click en un boton
+    BM_GETCHECK, # El codigo de mensaje para saber si un boton esta checkeado
+    BM_SETCHECK, # El codigo de mensaje para checkear un boton
+    BST_CHECKED, # El valor que indica que un boton esta checkeado
+    GMEM_MOVEABLE, # El valor que indica que la memoria es movible
+    KERNEL32, # El handle a la libreria KERNEL32
+    USER32, # El handle a la libreria USER32
+    WM_CLOSE, # El codigo de mensaje para cerrar una ventana
+    WM_GETTEXT, # El codigo de mensaje para obtener el texto de una ventana
+    WM_GETTEXTLENGTH, # El codigo de mensaje para obtener la longitud del texto de una ventana
 )
 
+# Creo mi logger. Le paso el nombre del fichero para que mis mensajes salgan etiquetados en el log de CAPE
 log = logging.getLogger(__name__)
 
+# Defino los tipos de funciones que voy a usar para enumerar ventanas y controles
 EnumWindowsProc = WINFUNCTYPE(c_bool, wintypes.HWND, wintypes.LPARAM)
 EnumChildProc = WINFUNCTYPE(c_bool, wintypes.HWND, wintypes.LPARAM)
 
-SM_CXSCREEN = 0
-SM_CYSCREEN = 1
-SM_CXFULLSCREEN = 16
-SM_CYFULLSCREEN = 17
+# Guardo los numeros que Windows usa para identificar cada medida de pantalla 
+SM_CXSCREEN = 0 # Ancho total de la pantalla
+SM_CYSCREEN = 1 # Alto total de la pantalla
+SM_CXFULLSCREEN = 16 # Ancho de la pantalla sin la barra de tareas
+SM_CYFULLSCREEN = 17 # Alto de la pantalla sin la barra de tareas
 
+# Obtengo la resolucion de pantalla
 RESOLUTION = {"x": USER32.GetSystemMetrics(SM_CXSCREEN), "y": USER32.GetSystemMetrics(SM_CYSCREEN)}
 
+# Obtengo la resolucion de pantalla sin la barra de tareas
 RESOLUTION_WITHOUT_TASKBAR = {"x": USER32.GetSystemMetrics(SM_CXFULLSCREEN), "y": USER32.GetSystemMetrics(SM_CYFULLSCREEN)}
 
-INITIAL_HWNDS = []
+INITIAL_HWNDS = [] # Preparo una lista vacia para guardar las ventanas qeu esten abiertas
 
-CF_UNICODETEXT = 0x000D
+CF_UNICODETEXT = 0x000D # Me guardo el valor que Windows usa para identificar el tipo de dato de texto unicode en el portapapeles
 
+# ----------------------------------- Parametros de movimiento del cursor -----------------------------------
+
+# Fijo cada cuanto tiempo muevo el cursor. Entre 12 y 18 milisegudos por paso
 STEP_MIN_MS = 12
 STEP_MAX_MS = 18
 
+# Decido cuando puedo girar el cursor. 18 grados por paso
 MAX_TURN_DEG = 18.0
 
+# Decido cuanto se curva cada trazo. 7% de la distancia del trazo
 CURVE_K_MAX = 0.07
 
+# Decido la distancia minima y maxima de cada trazo. Entre 80 y 400 pixeles
 STROKE_DIST_MIN = 80
 STROKE_DIST_MAX = 400
 
+# Calculo la duracion de cada trazo. Base de 0.28 segundos, mas 1 segundo por cada 900 pixeles, con un minimo de 0.28 y un maximo de 1.20 segundos
 DUR_BASE_S = 0.28
 DUR_PER_PX_S = 1.0 / 900.0
 DUR_MIN_S = 0.28
 DUR_MAX_S = 1.20
 
+# Dejo un margen de 12 pixeles para que el cursor no se acerque demasiado a los bordes de la pantalla
 EDGE_MARGIN = 12
-
+# Dejo un margen de 1/4 del ancho de la pantalla para evitar hacer clic encima de iconos de escritorio 
 LEFT_ICON_MARGIN = RESOLUTION_WITHOUT_TASKBAR["x"] // 4
 
+# ------------------------------------ Parametros de interaccion con ventanas -----------------------------------
 CLICK_PROB = 0.03
 
 WINDOW_INTERACT_EVERY = 40
