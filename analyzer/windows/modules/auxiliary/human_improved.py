@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import contextlib #Importo contextlib para suprimir excepciones
+import contextlib
 import logging # Importo logging para poder escribir mensajes en el log de CAPE
 import math # Importo math para usar senos, cosenos y angulos para mover el cursor
 import random # Importo random para elejir destinos duraicionese y probabilidades al azar
@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 EnumWindowsProc = WINFUNCTYPE(c_bool, wintypes.HWND, wintypes.LPARAM)
 EnumChildProc = WINFUNCTYPE(c_bool, wintypes.HWND, wintypes.LPARAM)
 
-# Guardo los numeros que Windows usa para identificar cada medida de pantalla 
+# Guardo los numeros que Windows usa para identificar cada medida de pantalla
 SM_CXSCREEN = 0 # Ancho total de la pantalla
 SM_CYSCREEN = 1 # Alto total de la pantalla
 SM_CXFULLSCREEN = 16 # Ancho de la pantalla sin la barra de tareas
@@ -46,6 +46,7 @@ RESOLUTION_WITHOUT_TASKBAR = {"x": USER32.GetSystemMetrics(SM_CXFULLSCREEN), "y"
 INITIAL_HWNDS = [] # Preparo una lista vacia para guardar las ventanas qeu esten abiertas
 
 CF_UNICODETEXT = 0x000D # Me guardo el valor que Windows usa para identificar el tipo de dato de texto unicode en el portapapeles
+
 
 # ----------------------------------- Parametros de movimiento del cursor -----------------------------------
 
@@ -71,13 +72,21 @@ DUR_MAX_S = 1.20
 
 # Dejo un margen de 12 pixeles para que el cursor no se acerque demasiado a los bordes de la pantalla
 EDGE_MARGIN = 12
-# Dejo un margen de 1/4 del ancho de la pantalla para evitar hacer clic encima de iconos de escritorio 
+# Dejo un margen de 1/4 del ancho de la pantalla para evitar hacer clic encima de iconos de escritorio
 LEFT_ICON_MARGIN = RESOLUTION_WITHOUT_TASKBAR["x"] // 4
 
-# ------------------------------------ Parametros de interaccion con ventanas -----------------------------------
+# Probabilidad de hacer un clic suelto en cada ciclo. Alta para que algun clic
+# caiga dentro de la ventana de 3 s en que Pafish escucha su check de clic.
+CLICK_PROB = 0.35
 
-# Probabilidad de hacer click en un boton o checkbox. 3% de probabilidad
-CLICK_PROB = 0.03
+# Probabilidad de hacer un doble clic en cada ciclo (Pafish exige dos clics en
+# menos de 500 ms).
+DOUBLE_CLICK_PROB = 0.20
+
+# Separacion entre los dos clics del doble clic (debe ser menor de 500 ms).
+DOUBLE_CLICK_GAP_S = 0.12
+
+# ------------------------------------ Parametros de interaccion con ventanas -----------------------------------
 
 # Cada cuantos ciclos de movimiento del cursor interactuo con las ventanes. 40 ciclos
 WINDOW_INTERACT_EVERY = 40
@@ -142,7 +151,7 @@ def get_cursor_position():
     USER32.GetCursorPos(byref(pt)) # Llamo a la funcion GetCursorPos de USER32 para obtener la posicion del cursor y guardarla en el objeto POINT
     return (pt.x, pt.y) # Devuelvo la posicion del cursor como una tupla (x, y)
 
-# Funcion para saber si el cursor esta encima de la ventana de la consola de CAPE
+# Funcion para saber si el cursor esta encima de una ventana de consola
 def cursor_over_console_window():
     pt = wintypes.POINT() # Creo un objeto POINT para guardar la posicion del cursor
     USER32.GetCursorPos(byref(pt)) # Llamo a la funcion GetCursorPos de USER32 para obtener la posicion del cursor y guardarla en el objeto POINT
@@ -151,7 +160,7 @@ def cursor_over_console_window():
         return False
     classname_ptr = create_unicode_buffer(128) # Creo un buffer de 128 caracteres para guardar el nombre de la clase de la ventana
     USER32.GetClassNameW(hwnd, classname_ptr, 128) # Llamo a la funcion GetClassNameW de USER32 para obtener el nombre de la clase de la ventana y guardarlo en el buffer
-    return "ConsoleWindowClass" in str(classname_ptr.value) # Devuelvo True si el nombre de la clase de la ventana contiene "ConsoleWindowClass", que es el nombre de la clase de la ventana de la consola de CAPE
+    return "ConsoleWindowClass" in str(classname_ptr.value) # Devuelvo True si el nombre de la clase de la ventana contiene "ConsoleWindowClass"
 
 # Funcion para obtener el texto de una ventana
 def get_window_text(hwnd):
@@ -177,9 +186,9 @@ def click_button(hwnd, classname):
     button_text = get_window_text(hwnd) # Obtengo el texto del boton
     if button_text == "" or not USER32.IsWindowEnabled(hwnd): # Si el boton no tiene texto o no esta habilitado, devuelvo True para que no se haga click en el boton
         return True
-    if "Microsoft" in button_text and classname in OFFICE_WINDOW_CLASSES: # Si el boton es de Microsoft Office y tiene el texto "Microsoft", lo ignoro para no hacer click en botones de actualizacion de Office
+    if "Microsoft" in button_text and classname in OFFICE_WINDOW_CLASSES: # Si es un dialogo de Office, pulso Enter para confirmarlo
         USER32.SetForegroundWindow(hwnd) # Traigo la ventana al frente
-        USER32.keybd_event(0x0D, 0x1C, 0, 0) # Simulo pulsar Enter para cerrar la ventana
+        USER32.keybd_event(0x0D, 0x1C, 0, 0) # Simulo pulsar Enter
         USER32.keybd_event(0x0D, 0x1C, 2, 0) # Simulo soltar Enter
         return False
     button_text = button_text.lower() # Paso el texto a minusculas para evitar problemas
@@ -246,12 +255,6 @@ def get_document_window(hwnd, lparam):
             USER32.SendNotifyMessageW(hwnd, WM_CLOSE, None, None) # Llamo a la funcion SendNotifyMessageW de USER32 para enviar el mensaje WM_CLOSE a la ventana, que hace que se cierre
     return True
 
-# Funcion para hacer click con el raton
-def click_mouse():
-    USER32.mouse_event(2, 0, 0, 0, None) # Bajo el boton izquierdo del raton
-    KERNEL32.Sleep(50) # Espero 50 milisegundos para simular un click normal
-    USER32.mouse_event(4, 0, 0, 0, None) # Subo el boton izquierdo del raton
-
 # Funcion para rellenar el portapapeles con texto aleatorio
 def populate_clipboard():
     randchars = list("   aaaabcddeeeeeefghhhiiillmnnnooooprrrsssttttuwy") # Creo una lista de caracteres aleatorios para rellenar el portapapeles
@@ -275,6 +278,89 @@ def populate_clipboard():
         USER32.CloseClipboard() # Cierro el portapapeles para que otros programas puedan usarlo
 
 
+# Funcion para hacer un clic simple con el raton
+def click_mouse():
+    USER32.mouse_event(2, 0, 0, 0, None) # Bajo el boton izquierdo del raton
+    KERNEL32.Sleep(50) # Espero 50 ms
+    USER32.mouse_event(4, 0, 0, 0, None) # Subo el boton izquierdo del raton
+
+# Funcion para hacer un doble clic con el raton
+def double_click_mouse():
+    # Dos clics seguidos separados por menos de 500 ms, que es lo que Pafish
+    # comprueba en su check de doble clic.
+    USER32.mouse_event(2, 0, 0, 0, None)
+    KERNEL32.Sleep(40)
+    USER32.mouse_event(4, 0, 0, 0, None)
+    time.sleep(DOUBLE_CLICK_GAP_S)
+    USER32.mouse_event(2, 0, 0, 0, None)
+    KERNEL32.Sleep(40)
+    USER32.mouse_event(4, 0, 0, 0, None)
+
+
+# ------------------------------------ Confirmacion de dialogos -----------------------------------
+
+# Conjunto de handles de dialogos ya confirmados (por ventana, no por texto),
+# para no repetir el mismo dialogo pero si atender los nuevos.
+CONFIRMED_DIALOGS = set()
+
+# Textos de boton de confirmacion que quiero pulsar en un dialogo.
+DIALOG_CONFIRM_TEXTS = ("yes", "ok", "accept", "agree", "aceptar", "si", "ja")
+
+def _get_button_center(hwnd):
+    # Calculo el centro del boton en pantalla, que es donde hare el clic fisico.
+    rect = wintypes.RECT()
+    if not USER32.GetWindowRect(hwnd, byref(rect)):
+        return None
+    return ((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
+
+def _confirm_dialog_button(hwnd, lparam):
+    # Callback por cada control hijo: si es un boton de confirmacion de un
+    # dialogo nuevo, lo traigo al frente y lo pulso con un clic fisico. Como
+    # esto corre en el MISMO hilo que el movimiento, nada me pisa el cursor.
+    if not USER32.IsWindowVisible(hwnd) or not USER32.IsWindowEnabled(hwnd):
+        return True
+    cls = create_unicode_buffer(128)
+    USER32.GetClassNameW(hwnd, cls, 128)
+    if "button" not in str(cls.value).lower():
+        return True
+    text = get_window_text(hwnd).lower()
+    if text == "" or text not in DIALOG_CONFIRM_TEXTS:
+        return True
+    GA_ROOT = 2
+    dialog_hwnd = USER32.GetAncestor(hwnd, GA_ROOT)
+    if dialog_hwnd in CONFIRMED_DIALOGS:
+        return True
+    center = _get_button_center(hwnd)
+    if center is None:
+        return True
+    log.info('Dialog button "%s" found, confirming', text)
+    # Traigo el dialogo al frente (truco ALT para el foreground lock de la VM).
+    if dialog_hwnd:
+        USER32.keybd_event(0x12, 0, 0, 0)
+        USER32.keybd_event(0x12, 0, 2, 0)
+        USER32.SetForegroundWindow(dialog_hwnd)
+        USER32.BringWindowToTop(dialog_hwnd)
+        USER32.SetWindowPos(dialog_hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002)
+        KERNEL32.Sleep(30)
+    # Clic fisico directo sobre el boton (salto directo, sin pasos lentos).
+    USER32.SetCursorPos(int(center[0]), int(center[1]))
+    KERNEL32.Sleep(30)
+    USER32.mouse_event(2, 0, 0, 0, None)
+    KERNEL32.Sleep(40)
+    USER32.mouse_event(4, 0, 0, 0, None)
+    KERNEL32.Sleep(300)   # Dejo el cursor sobre el boton para el check plausible
+    CONFIRMED_DIALOGS.add(dialog_hwnd)
+    return False
+
+def _scan_and_confirm_dialogs(hwnd, lparam):
+    # Recorro las ventanas hijas de cada ventana de primer nivel buscando
+    # botones de confirmacion.
+    if not USER32.IsWindowVisible(hwnd):
+        return True
+    USER32.EnumChildWindows(hwnd, EnumChildProc(_confirm_dialog_button), 0)
+    return True
+
+
 # ------------------------------------ Motor del movimiento -----------------------------------
 
 # Calculo cuanto del trazo llevo recorrido segun el modelo de movimiento de minima aceleracion (min jerk)
@@ -289,8 +375,8 @@ def _min_jerk(tau):
 def _ang_diff(a, b):
     d = (b - a) % (2.0 * math.pi) # Calculo la diferencia y la dejo en el rango 0..360
     if d > math.pi: # Si la diferencia es mayor de 180 grados, giro en sentido contrario
-        d -= 2.0 * math.pi 
-    return d 
+        d -= 2.0 * math.pi
+    return d
 
 # Clase para guardar el estado del movimiento del cursor
 class _MovementState:
@@ -416,11 +502,21 @@ class HumanImproved(Auxiliary, Thread):
                 tx, ty = _pick_next_target(state)
                 _human_move_to(state, tx, ty, self._should_run)
 
-                if random.random() < CLICK_PROB and not cursor_over_console_window():
-                    click_mouse()
+                # Actividad de clic (solo si no estoy sobre una consola). Primero
+                # pruebo doble clic y, si no, un clic suelto.
+                if not cursor_over_console_window():
+                    if random.random() < DOUBLE_CLICK_PROB:
+                        double_click_mouse()
+                    elif random.random() < CLICK_PROB:
+                        click_mouse()
 
                 if random.random() < 0.04:
                     _human_pause()
+
+                # Reviso si hay dialogos que confirmar. Como esto es el mismo
+                # hilo, tras confirmar el cursor queda donde lo dejo el clic y
+                # nada lo mueve hasta la siguiente vuelta.
+                USER32.EnumWindows(EnumWindowsProc(_scan_and_confirm_dialogs), 0)
 
                 if cycle % WINDOW_INTERACT_EVERY == 0:
                     USER32.EnumWindows(EnumWindowsProc(handle_window_interaction), 0)
