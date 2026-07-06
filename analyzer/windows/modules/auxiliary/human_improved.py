@@ -304,7 +304,7 @@ def double_click_mouse():
 CONFIRMED_DIALOGS = set()
 
 # Textos de boton de confirmacion que quiero pulsar en un dialogo.
-DIALOG_CONFIRM_TEXTS = ("yes", "ok", "accept", "agree", "aceptar", "si", "ja")
+DIALOG_CONFIRM_TEXTS = ("yes", "ok", "accept", "agree", "aceptar", "si", "s\u00ed", "ja", "aceptar", "acepto")
 
 def _get_button_center(hwnd):
     # Calculo el centro del boton en pantalla, que es donde hare el clic fisico.
@@ -345,10 +345,19 @@ def _confirm_dialog_button(hwnd, lparam):
     # Clic fisico directo sobre el boton (salto directo, sin pasos lentos).
     USER32.SetCursorPos(int(center[0]), int(center[1]))
     KERNEL32.Sleep(30)
+    # DIAG: compruebo donde quedo el cursor respecto al boton objetivo
+    _cur = wintypes.POINT()
+    USER32.GetCursorPos(byref(_cur))
+    _fg = USER32.GetForegroundWindow()
+    log.info("DIAG dialogo: objetivo=(%d,%d) cursor=(%d,%d) foreground=%s dialog_hwnd=%s",
+             center[0], center[1], _cur.x, _cur.y, _fg, dialog_hwnd)
     USER32.mouse_event(2, 0, 0, 0, None)
     KERNEL32.Sleep(40)
     USER32.mouse_event(4, 0, 0, 0, None)
-    KERNEL32.Sleep(300)   # Dejo el cursor sobre el boton para el check plausible
+    KERNEL32.Sleep(300)   # Dejo el cursor sobre el boton
+    # DIAG: ¿sigue existiendo el dialogo tras el clic? Si se cerro, es que funciono
+    _still = USER32.IsWindowVisible(dialog_hwnd) if dialog_hwnd else 0
+    log.info("DIAG tras clic: dialogo sigue visible=%s", _still)
     CONFIRMED_DIALOGS.add(dialog_hwnd)
     return False
 
