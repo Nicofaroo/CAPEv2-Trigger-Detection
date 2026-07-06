@@ -306,34 +306,6 @@ CONFIRMED_DIALOGS = set()
 # Textos de boton de confirmacion que quiero pulsar en un dialogo.
 DIALOG_CONFIRM_TEXTS = ("yes", "ok", "accept", "agree", "aceptar", "si", "s\u00ed", "ja", "aceptar", "acepto")
 
-# --- SendInput: metodo moderno para inyectar clics, mas fiable que mouse_event ---
-from ctypes import Structure, c_long, c_ulong, POINTER, sizeof as _sizeof, byref as _byref
-import ctypes as _ctypes
-
-class _MOUSEINPUT(Structure):
-    _fields_ = [("dx", c_long), ("dy", c_long), ("mouseData", c_ulong),
-                ("dwFlags", c_ulong), ("time", c_ulong), ("dwExtraInfo", POINTER(c_ulong))]
-
-class _INPUT(Structure):
-    _fields_ = [("type", c_ulong), ("mi", _MOUSEINPUT)]
-
-def _send_absolute_click(x, y):
-    # Hago un clic con SendInput usando coordenadas absolutas normalizadas
-    # (0..65535). Es mas fiable que mouse_event porque el sistema lo trata como
-    # entrada real. Muevo y pulso en la posicion (x, y) de pantalla.
-    sw = USER32.GetSystemMetrics(0)   # ancho de pantalla
-    sh = USER32.GetSystemMetrics(1)   # alto de pantalla
-    ax = int(x * 65535 / sw)
-    ay = int(y * 65535 / sh)
-    MOVE = 0x0001; ABSOLUTE = 0x8000; LEFTDOWN = 0x0002; LEFTUP = 0x0004
-    for flags in (MOVE | ABSOLUTE, LEFTDOWN, LEFTUP):
-        inp = _INPUT()
-        inp.type = 0  # INPUT_MOUSE
-        inp.mi = _MOUSEINPUT(ax, ay, 0, flags, 0, None)
-        USER32.SendInput(1, _byref(inp), _sizeof(_INPUT))
-        KERNEL32.Sleep(40)
-
-
 def _get_button_center(hwnd):
     # Calculo el centro del boton en pantalla, que es donde hare el clic fisico.
     rect = wintypes.RECT()
@@ -370,53 +342,22 @@ def _confirm_dialog_button(hwnd, lparam):
         USER32.BringWindowToTop(dialog_hwnd)
         USER32.SetWindowPos(dialog_hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002)
         KERNEL32.Sleep(400)                         # Espero a que el dialogo se pinte y quede al frente
-    # Muevo el cursor al boton.
+    # Muevo el cursor al boton y espero a que el dialogo este receptivo.
     USER32.SetCursorPos(int(center[0]), int(center[1]))
-    KERNEL32.Sleep(400)
-    # DIAG: donde quedo el cursor y estado del dialogo ANTES de clicar
-    _c = wintypes.POINT()
-    USER32.GetCursorPos(byref(_c))
-    _fg = USER32.GetForegroundWindow()
-    log.info("DIAG pre-clic: boton=(%d,%d) cursor=(%d,%d) fg=%s dlg=%s vis=%s enabled=%s",
-             center[0], center[1], _c.x, _c.y, _fg, dialog_hwnd,
-             USER32.IsWindowVisible(dialog_hwnd), USER32.IsWindowEnabled(hwnd))
-    # Primer clic fisico.
+    KERNEL32.Sleep(300)
+    # 1) Clic fisico real: mueve el raton fisico y deja el cursor sobre el boton.
+    #    Es lo que exigen los checks de Pafish (raton fisico + cursor en el rect).
     USER32.mouse_event(2, 0, 0, 0, None)
     KERNEL32.Sleep(60)
     USER32.mouse_event(4, 0, 0, 0, None)
-    KERNEL32.Sleep(250)
-    log.info("DIAG post-clic1: dlg vis=%s", USER32.IsWindowVisible(dialog_hwnd))
-
-    # Si el clic fisico no cerro el dialogo, voy escalando metodos alternativos.
-    # El cursor sigue sobre el boton (para el check de plausibilidad de Pafish),
-    # pero la confirmacion la fuerzo por otras vias que no dependen de que el
-    # mouse_event posicional "caiga" bien.
-
-    # Metodo 2: SendInput con coordenadas absolutas (mas fiable que mouse_event).
+    KERNEL32.Sleep(200)
+    # 2) BM_CLICK directo al boton: algunos dialogos (p.ej. LummaC2 2025) no
+    #    reaccionan al clic fisico posicional y solo se confirman con el mensaje
+    #    directo. Lo envio siempre; si el dialogo ya se cerro con el clic fisico,
+    #    no tiene efecto. El cursor sigue sobre el boton para el check plausible.
     if dialog_hwnd and USER32.IsWindowVisible(dialog_hwnd):
-        log.info("DIAG: intento 2 - SendInput absoluto")
-        _send_absolute_click(center[0], center[1])
-        KERNEL32.Sleep(300)
-        log.info("DIAG post-clic2: dlg vis=%s", USER32.IsWindowVisible(dialog_hwnd))
-
-    # Metodo 3: pulsar Enter en el dialogo (confirma el boton por defecto).
-    if dialog_hwnd and USER32.IsWindowVisible(dialog_hwnd):
-        log.info("DIAG: intento 3 - tecla Enter")
-        USER32.SetForegroundWindow(dialog_hwnd)
-        KERNEL32.Sleep(100)
-        USER32.keybd_event(0x0D, 0, 0, 0)           # Enter down
-        KERNEL32.Sleep(60)
-        USER32.keybd_event(0x0D, 0, 2, 0)           # Enter up
-        KERNEL32.Sleep(300)
-        log.info("DIAG post-enter: dlg vis=%s", USER32.IsWindowVisible(dialog_hwnd))
-
-    # Metodo 4: mensaje BM_CLICK directo al boton (ultimo recurso).
-    if dialog_hwnd and USER32.IsWindowVisible(dialog_hwnd):
-        log.info("DIAG: intento 4 - BM_CLICK directo")
         USER32.SendMessageW(hwnd, 0x00F5, 0, 0)     # BM_CLICK
-        KERNEL32.Sleep(300)
-        log.info("DIAG post-bmclick: dlg vis=%s", USER32.IsWindowVisible(dialog_hwnd))
-
+        KERNEL32.Sleep(200)
     CONFIRMED_DIALOGS.add(dialog_hwnd)
     return False
 
