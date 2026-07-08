@@ -1,0 +1,22 @@
+rule:
+  meta:
+    name: query mouse cursor position
+    namespace: anti-analysis/anti-sandbox/reverse-turing-test
+    authors:
+      - nicolas.fabra@unizar.es
+    description: |
+      Detecta que el programa consulta la posicion del cursor del raton, un
+      indicio del mecanismo RTT (Reverse Turing Test) basado en movimiento:
+      el malware muestrea GetCursorPos para comprobar si hay un humano moviendo
+      el raton antes de ejecutar su payload. Usado por familias como Gozi/Ursnif
+      y LummaC2.
+    scopes:
+      static: function
+      dynamic: call
+    att&ck:
+      - Defense Evasion::Virtualization/Sandbox Evasion::User Activity Based Checks [T1497.002]
+    examples:
+      - 934c3445fe9d1a3d4cca4d3ec09c9191d8f9067e13e58fa0b288cb520cd40785
+  features:
+    - or:
+      - api: GetCursorPos

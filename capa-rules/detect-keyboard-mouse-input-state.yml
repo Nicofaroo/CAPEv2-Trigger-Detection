@@ -1,0 +1,20 @@
+rule:
+  meta:
+    name: query keyboard or mouse button state
+    namespace: anti-analysis/anti-sandbox/reverse-turing-test
+    authors:
+      - nicolas.fabra@unizar.es
+    description: |
+      Detecta consultas al estado de teclas o botones del raton
+      (GetAsyncKeyState / GetKeyState). Es un indicio del mecanismo RTT basado
+      en actividad de entrada: el malware comprueba si un humano esta pulsando
+      teclas o botones antes de ejecutar su payload.
+    scopes:
+      static: function
+      dynamic: call
+    att&ck:
+      - Defense Evasion::Virtualization/Sandbox Evasion::User Activity Based Checks [T1497.002]
+  features:
+    - or:
+      - api: GetAsyncKeyState
+      - api: GetKeyState

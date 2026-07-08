@@ -1,0 +1,22 @@
+rule:
+  meta:
+    name: reverse turing test mechanism
+    namespace: anti-analysis/anti-sandbox/reverse-turing-test
+    authors:
+      - nicolas.fabra@unizar.es
+    description: |
+      Regla agregadora: indica que el programa implementa algun mecanismo RTT
+      (Reverse Turing Test) para detectar la presencia de un humano antes de
+      ejecutar su payload. Casa si se detecta consulta del cursor, del estado
+      de teclado/raton, espera de dialogo, o consulta de inactividad.
+    scopes:
+      static: function
+      dynamic: call
+    att&ck:
+      - Defense Evasion::Virtualization/Sandbox Evasion::User Activity Based Checks [T1497.002]
+  features:
+    - or:
+      - match: query mouse cursor position
+      - match: query keyboard or mouse button state
+      - match: wait for dialog confirmation
+      - match: query last user input time

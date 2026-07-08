@@ -1,0 +1,19 @@
+rule:
+  meta:
+    name: query last user input time
+    namespace: anti-analysis/anti-sandbox/reverse-turing-test
+    authors:
+      - nicolas.fabra@unizar.es
+    description: |
+      Detecta consultas al tiempo transcurrido desde la ultima entrada del
+      usuario (GetLastInputInfo). Es un indicio del mecanismo RTT basado en
+      inactividad: el malware comprueba si el sistema ha estado usandose
+      recientemente (un sandbox suele estar inactivo). Usado por Agent Tesla.
+    scopes:
+      static: function
+      dynamic: call
+    att&ck:
+      - Defense Evasion::Virtualization/Sandbox Evasion::User Activity Based Checks [T1497.002]
+  features:
+    - or:
+      - api: GetLastInputInfo
