@@ -1,0 +1,28 @@
+rule:
+  meta:
+    name: query double click threshold
+    namespace: anti-analysis/anti-sandbox/reverse-turing-test
+    authors:
+      - nicolas.fabra@unizar.es
+    description: |
+      Detecta la consulta del umbral temporal de doble clic del sistema
+      (GetDoubleClickTime). Un programa que valida si dos clics consecutivos
+      caen dentro de ese umbral no esta comprobando que haya clics, sino que
+      la cadencia entre ellos sea la de una persona. Es el mecanismo que emplea
+      Pafish en su comprobacion de actividad de doble clic.
+
+      REGLA EXPLORATORIA. GetDoubleClickTime tambien lo usa software grafico
+      legitimo para calibrar su propia gestion de eventos, de modo que su poder
+      discriminante esta por determinar. Se evalua contra el grupo de control
+      antes de decidir si se incorpora al indicador agregado; por eso NO figura
+      todavia en la regla 'reverse turing test mechanism'.
+    scopes:
+      static: function
+      dynamic: call
+    att&ck:
+      - Defense Evasion::Virtualization/Sandbox Evasion::User Activity Based Checks [T1497.002]
+    examples:
+      - 9e7d694ed87ae95f9c25af5f3a5cea76188cd7c1c91ce49c92e25585f232d98e
+  features:
+    - or:
+      - api: GetDoubleClickTime

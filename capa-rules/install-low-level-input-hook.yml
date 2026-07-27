@@ -1,0 +1,35 @@
+rule:
+  meta:
+    name: install low-level input hook
+    namespace: anti-analysis/anti-sandbox/reverse-turing-test
+    authors:
+      - nicolas.fabra@unizar.es
+    description: |
+      Detecta la instalacion de un hook de entrada de bajo nivel
+      (SetWindowsHookEx con WH_MOUSE_LL o WH_KEYBOARD_LL). Es un indicio del
+      mecanismo RTT basado en espera de evento: en lugar de sondear el estado
+      del raton, el malware se suscribe a la cola de entrada del sistema y
+      condiciona la ejecucion de su payload a recibir un evento real de clic o
+      de pulsacion de tecla.
+      Es el mecanismo de UpClicker, que espera el evento WM_LBUTTONUP, y de
+      BaneChant, que exige mas de tres clics izquierdos. Pafish tambien lo
+      emplea para su bateria de comprobaciones de actividad de clic.
+      La constante del tipo de hook se exige en la misma funcion que la
+      llamada: SetWindowsHookEx a secas aparece en mucho software legitimo
+      (gestores de portapapeles, utilidades de accesibilidad, lanzadores), y
+      sin esa restriccion la regla seria muy ruidosa.
+    scopes:
+      static: function
+      dynamic: call
+    att&ck:
+      - Defense Evasion::Virtualization/Sandbox Evasion::User Activity Based Checks [T1497.002]
+    examples:
+      - 9e7d694ed87ae95f9c25af5f3a5cea76188cd7c1c91ce49c92e25585f232d98e
+  features:
+    - and:
+      - or:
+        - api: SetWindowsHookExA
+        - api: SetWindowsHookExW
+      - or:
+        - number: 14 = WH_MOUSE_LL
+        - number: 13 = WH_KEYBOARD_LL

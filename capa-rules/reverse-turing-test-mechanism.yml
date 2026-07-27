@@ -8,7 +8,12 @@ rule:
       Regla agregadora: indica que el programa implementa algun mecanismo RTT
       (Reverse Turing Test) para detectar la presencia de un humano antes de
       ejecutar su payload. Casa si se detecta consulta del cursor, del estado
-      de teclado/raton, espera de dialogo, o consulta de inactividad.
+      de teclado/raton, espera de dialogo, consulta de inactividad, o la
+      instalacion de un hook de entrada de bajo nivel.
+
+      Nota: la regla 'query double click threshold' se mantiene deliberadamente
+      fuera de este agregado hasta validar su poder discriminante frente al
+      grupo de control.
     scopes:
       static: function
       dynamic: call
@@ -20,3 +25,4 @@ rule:
       - match: query keyboard or mouse button state
       - match: wait for dialog confirmation
       - match: query last user input time
+      - match: install low-level input hook
