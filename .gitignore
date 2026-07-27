@@ -25,3 +25,28 @@ installer/kvm-config.sh
 
 docs/book/src/_build
 /.vs
+
+# ---------------------------------------------------------------------------
+# TFG - Estudio de prevalencia de mecanismos RTT
+# Del directorio del estudio solo se versionan los scripts.
+# Nunca subir binarios de malware, corpus ni salidas del barrido.
+# ---------------------------------------------------------------------------
+capa-rules/estudio-prevalencia/*
+!capa-rules/estudio-prevalencia/*.py
+!capa-rules/estudio-prevalencia/*.sh
+
+# Directorios de trabajo externos, por si se copian dentro del repo
+tfg-prevalencia/
+muestras/
+
+# Resultados regenerables del barrido
+resultados.csv
+estado_*.csv
+validacion.csv
+
+# Entorno virtual del estudio
+venv/
+
+# Credenciales de MalwareBazaar
+*.authkey
+auth-key*
