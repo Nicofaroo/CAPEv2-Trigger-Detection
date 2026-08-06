@@ -288,6 +288,8 @@ table = (
     ("NtMapViewOfSection", "process", ("ppPp", "SectionHandle", "ProcessHandle", "BaseAddress", "SectionOffset")),
     ("GetSystemMetrics", "misc", ("l", "SystemMetricIndex")),
     ("GetCursorPos", "misc", ("ll", "x", "y")),
+    ("GetLastInputInfo", "system", ("",)),
+    ("GetAsyncKeyState", "user", ("l", "vKey")),
     ("REGISTRY_OPEN_KEY", "registry", ("s", "SubKey")),
     ("REGISTRY_DELETE_KEY", "registry", ("s", "SubKey")),
     ("REGISTRY_VALUE_KEY_SET", "registry", ("sss", "SubKey", "ValueName", "Data")),
