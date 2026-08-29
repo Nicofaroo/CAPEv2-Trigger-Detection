@@ -1,25 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-01b_metadatos.py - Completa familia y fecha consultando la API de MalwareBazaar
-                   SOLO para los hashes que hay en el corpus.
-
-Alternativa al volcado completo (full.csv), que son >1.000.000 de muestras
-cuando aqui solo hacen falta ~1.800. Actualiza meta/corpus.csv en el sitio,
-de modo que NO hay que volver a extraer los lotes.
-
-Uso:
-    export MB_KEY="tu-auth-key"
-    python3 01b_metadatos.py
-
-Opciones:
-    --hilos N     consultas simultaneas (por defecto 4; no subir mucho, hay
-                  politica de uso justo)
-    --reintentos  numero de reintentos por hash ante error de red
-
-Solo consulta los hashes cuya familia siga siendo 'sin_etiquetar', asi que se
-puede relanzar sin repetir trabajo si se corta a mitad.
-"""
 
 import argparse
 import csv
@@ -44,7 +24,6 @@ _hechas = 0
 
 
 def consultar(sha256, clave, reintentos=3):
-    """Devuelve dict con familia/first_seen/file_type, o None si no se sabe."""
     datos = urllib.parse.urlencode({"query": "get_info", "hash": sha256}).encode()
     for intento in range(reintentos):
         for url in ENDPOINTS:
@@ -55,7 +34,7 @@ def consultar(sha256, clave, reintentos=3):
                 with urllib.request.urlopen(req, timeout=30) as r:
                     doc = json.loads(r.read().decode("utf-8", "replace"))
             except urllib.error.HTTPError as e:
-                if e.code in (429, 503):        # limite o saturacion: espero
+                if e.code in (429, 503):
                     time.sleep(5 * (intento + 1))
                     continue
                 continue
@@ -92,7 +71,7 @@ def trabajador(cola, clave, resultados, total, reintentos):
             if _hechas % 50 == 0 or _hechas == total:
                 print(f"    {_hechas}/{total} consultados, "
                       f"{len(resultados)} con metadatos", flush=True)
-        time.sleep(0.15)        # cortesia con la API
+        time.sleep(0.15)
 
 
 def main():
@@ -123,7 +102,6 @@ def main():
         return
 
     print(f"[*] Consultando {len(pendientes)} hashes con {args.hilos} hilos ...")
-    print("    (se puede cortar con Ctrl+C y relanzar; no repite lo ya hecho)")
     resultados = {}
     cola = list(pendientes)
     hilos = [threading.Thread(target=trabajador,
@@ -139,7 +117,6 @@ def main():
     except KeyboardInterrupt:
         print("\n[=] Interrumpido. Guardo lo obtenido hasta ahora.")
 
-    # --- Volcar resultados ---
     for r in filas:
         info = resultados.get(r["sha256"])
         if info:

@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-03_parsear.py - Convierte los JSON de capa en una tabla plana de resultados.
-
-Salida: $BASE/out/resultados.csv, una fila por muestra con:
-  - identificacion y metadatos (del corpus.csv)
-  - una columna 0/1 por cada mecanismo RTT
-  - rtt_any: 1 si casa cualquiera de los cuatro
-  - empaquetado: 1 si capa dispara alguna regla del namespace anti-analysis/packer
-  - packer: nombre de la regla de empaquetado que ha casado
-  - n_funciones: numero de funciones que capa ha logrado analizar
-    (proxy adicional de empaquetado: un PE empaquetado suele dar muy pocas)
-  - estado: ok / timeout / error / sin_json
-"""
 
 import csv
 import json
@@ -21,7 +8,6 @@ from pathlib import Path
 
 BASE = Path(os.environ.get("BASE", Path.home() / "tfg-prevalencia"))
 
-# Nombres EXACTOS de tus reglas (campo meta.name de cada .yml)
 REGLAS_RTT = {
     "query mouse cursor position":            "rtt_cursor",
     "query keyboard or mouse button state":   "rtt_teclado",
@@ -32,9 +18,6 @@ REGLAS_RTT = {
     "reverse turing test mechanism":          "rtt_agregada",
 }
 
-# Los cinco mecanismos que cuentan para el indicador agregado. 'rtt_dobleclic'
-# queda fuera a proposito: es exploratoria y su poder discriminante se decide
-# con el grupo de control (ver T1).
 MECANISMOS_NUCLEO = ("rtt_cursor", "rtt_teclado", "rtt_dialogo",
                      "rtt_inactividad", "rtt_hook")
 
@@ -42,7 +25,6 @@ NS_PACKER = "anti-analysis/packer"
 
 
 def n_funciones(doc):
-    """El sitio exacto cambia entre versiones de capa, asi que pruebo varios."""
     meta = doc.get("meta", {})
     analisis = meta.get("analysis", meta)
     fc = analisis.get("feature_counts", {})
@@ -57,7 +39,6 @@ def n_funciones(doc):
 
 
 def parsear_json(ruta):
-    """Devuelve (dict_de_flags, error_o_None)."""
     try:
         with open(ruta, "r", encoding="utf-8", errors="replace") as f:
             doc = json.load(f)
@@ -81,8 +62,6 @@ def parsear_json(ruta):
             packers.append(nombre)
     fila["packer"] = ";".join(sorted(set(packers)))
 
-    # rtt_any lo calculo yo a partir de los cuatro mecanismos, sin depender de
-    # que la regla agregada haya casado (asi es independiente y comprobable).
     fila["rtt_any"] = int(any(fila[c] for c in MECANISMOS_NUCLEO))
     fila["n_mecanismos"] = sum(fila[c] for c in MECANISMOS_NUCLEO)
     return fila, None
@@ -97,7 +76,6 @@ def main():
         for r in csv.DictReader(f):
             corpus[r["sha256"]] = r
 
-    # Codigos de salida del barrido
     estados = {}
     for grupo in ("malware", "goodware"):
         p = BASE / "out" / f"estado_{grupo}.csv"
@@ -165,10 +143,6 @@ def main():
     print(f"[+] {len(filas)} filas escritas en {salida}")
     print(f"    ok: {contador['ok']}, timeout: {contador['timeout']}, "
           f"error: {contador['error']}, sin JSON: {contador['sin_json']}")
-    print("")
-    print("IMPORTANTE para la memoria: las muestras con estado != ok NO son")
-    print("negativos, son datos ausentes. Excluyelas del denominador y declara")
-    print("cuantas eran y por que.")
 
 
 if __name__ == "__main__":

@@ -1,19 +1,4 @@
 #!/bin/bash
-# ==============================================================================
-# 02b_piloto.sh - Estima si merece la pena una segunda pasada sobre los timeouts.
-#
-# Uso:  ./02b_piloto.sh [n_muestras] [timeout_s] [hilos]
-# Ej.:  ./02b_piloto.sh 20 600 8      (valores por defecto)
-#
-# Coge N muestras AL AZAR de entre las que agotaron el tiempo en la pasada
-# anterior (codigo 124) y las reanaliza con mas margen y menos paralelismo.
-# Sirve para decidir con datos si la segunda pasada completa vale las horas
-# de ventilador, en lugar de decidirlo a ojo.
-#
-# NO toca las muestras que ya se analizaron bien: solo trabaja sobre los
-# timeouts. Los JSON que consiga se guardan en su sitio definitivo, asi que
-# lo recuperado aqui NO habra que repetirlo despues.
-# ==============================================================================
 
 set -uo pipefail
 
@@ -30,9 +15,8 @@ LOGDIR="$BASE/out/log/$GRUPO"
 ESTADO="$BASE/out/estado_$GRUPO.csv"
 PILOTO="$BASE/out/piloto_$(date +%Y%m%d_%H%M).csv"
 
-[[ -f "$ESTADO" ]] || { echo "[!] No existe $ESTADO. Lanza antes 02_barrido.sh"; exit 1; }
+[[ -f "$ESTADO" ]] || { echo "[!] No existe $ESTADO."; exit 1; }
 
-# --- Muestras que expiraron y que SIGUEN sin JSON ---
 mapfile -t EXPIRADAS < <(
     awk -F, 'NR>1 && $2==124 {print $1}' "$ESTADO" | sort -u | while read -r sha; do
         [[ -s "$JSONDIR/$sha.json" ]] || echo "$sha"
@@ -41,11 +25,10 @@ mapfile -t EXPIRADAS < <(
 
 TOTAL=${#EXPIRADAS[@]}
 if [[ $TOTAL -eq 0 ]]; then
-    echo "[=] No queda ningun timeout pendiente. Nada que hacer."
+    echo "[=] No queda ningun timeout pendiente."
     exit 0
 fi
 
-# --- Seleccion aleatoria reproducible ---
 mapfile -t SEL < <(printf '%s\n' "${EXPIRADAS[@]}" | sort | shuf -n "$N" --random-source=/dev/zero)
 
 echo "=========================================================="
@@ -87,7 +70,6 @@ export JSONDIR LOGDIR CORPUS CAPA_BIN RULES_DIR TMO PILOTO
 printf '%s\n' "${SEL[@]}" \
   | xargs -P "$HILOS" -I{} bash -c 'analizar_una "$@"' _ {}
 
-# --- Veredicto ---
 OK=$(awk -F, 'NR>1 && $2==0' "$PILOTO" | wc -l)
 TO=$(awk -F, 'NR>1 && $2==124' "$PILOTO" | wc -l)
 ER=$(awk -F, 'NR>1 && $2!=0 && $2!=124' "$PILOTO" | wc -l)
@@ -118,9 +100,8 @@ if [[ $NSEL -gt 0 ]]; then
     elif [[ $TASA -ge 20 ]]; then
         echo "VEREDICTO: dudoso. Valora si el sesgo compensa las horas."
     else
-        echo "VEREDICTO: no merece la pena. Reportalo como limitacion:"
-        echo "  esas muestras son inanalizables estaticamente en tiempo razonable,"
-        echo "  lo cual es un resultado que refuerza la necesidad de la via dinamica."
+        echo "VEREDICTO: no merece la pena."
+        echo "  esas muestras son inanalizables estaticamente en tiempo razonable."
     fi
 fi
 echo ""

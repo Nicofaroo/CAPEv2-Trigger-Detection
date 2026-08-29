@@ -1,25 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-01_corpus.py - Construye el corpus a partir de los lotes diarios de MalwareBazaar.
-
-Que hace:
-  1. Extrae los ZIP de $BASE/zips/ (password 'infected'), manejando el caso de
-     ZIP anidados (lote diario que contiene un ZIP por muestra).
-  2. Filtra: se queda SOLO con PE32/PE32+ validos. Descarta lo demas.
-  3. Deduplica por SHA-256 y renombra cada fichero a su hash.
-  4. Cruza con el CSV de metadatos de MalwareBazaar para obtener familia,
-     fecha de primera aparicion y tipo declarado.
-  5. Escribe $BASE/meta/corpus.csv con una fila por muestra.
-
-Uso:
-    python3 01_corpus.py                 # procesa malware
-    python3 01_corpus.py --grupo goodware --origen /ruta/a/system32_extraido
-
-Requisitos: 7z en el PATH. pefile es opcional (mejora el filtrado y anade
-columnas); si no esta, se hace un filtrado mas basico leyendo la cabecera PE
-a mano.
-"""
 
 import argparse
 import csv
@@ -40,11 +20,9 @@ except ImportError:
     HAY_PEFILE = False
 
 BASE = Path(os.environ.get("BASE", Path.home() / "tfg-prevalencia"))
-MAX_MB = 50          # descarto ficheros enormes: capa tarda muchisimo y aportan poco
-SEMILLA = 20260727   # fija: el submuestreo debe ser reproducible
+MAX_MB = 50
+SEMILLA = 20260727
 
-
-# --------------------------------------------------------------- utilidades ---
 
 def sha256_de(ruta):
     h = hashlib.sha256()
@@ -55,7 +33,6 @@ def sha256_de(ruta):
 
 
 def info_pe(ruta):
-    """Devuelve un dict con datos del PE, o None si no es un PE valido."""
     try:
         with open(ruta, "rb") as f:
             cabecera = f.read(0x40)
@@ -72,7 +49,6 @@ def info_pe(ruta):
         maquina = pe.FILE_HEADER.Machine
         arch = {0x14c: "x86", 0x8664: "x64", 0x1c0: "arm", 0xaa64: "arm64"}.get(maquina, hex(maquina))
         es_dll = bool(pe.FILE_HEADER.Characteristics & 0x2000)
-        # imphash es util para agrupar variantes; puede fallar en muestras rotas
         try:
             pe.parse_data_directories(directories=[
                 pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_IMPORT"]])
@@ -83,7 +59,6 @@ def info_pe(ruta):
         pe.close()
         return {"arch": arch, "es_dll": int(es_dll), "imphash": imph, "n_imports": n_imports}
 
-    # --- Fallback sin pefile: leo e_lfanew y la Machine a mano ---
     try:
         with open(ruta, "rb") as f:
             f.seek(0x3C)
@@ -102,7 +77,6 @@ def info_pe(ruta):
 
 
 def extraer_recursivo(zip_path, destino, password="infected", profundidad=0):
-    """Extrae un ZIP y, si dentro hay mas ZIP, los extrae tambien (1 nivel)."""
     if profundidad > 2:
         return
     cmd = ["7z", "x", "-y", f"-p{password}", f"-o{destino}", str(zip_path)]
@@ -110,7 +84,6 @@ def extraer_recursivo(zip_path, destino, password="infected", profundidad=0):
     if r.returncode != 0:
         print(f"    [!] 7z fallo en {zip_path.name}: {r.stderr.decode(errors='replace')[:200]}")
         return
-    # Si el lote diario contiene un ZIP por muestra, los abro tambien
     for hijo in list(Path(destino).rglob("*.zip")):
         sub = Path(tempfile.mkdtemp(dir=destino))
         extraer_recursivo(hijo, sub, password, profundidad + 1)
@@ -118,11 +91,6 @@ def extraer_recursivo(zip_path, destino, password="infected", profundidad=0):
 
 
 def cargar_metadatos(ruta_csv):
-    """
-    Lee el CSV de MalwareBazaar. El fichero lleva lineas de comentario que
-    empiezan por '#' y campos entrecomillados separados por ', '.
-    Devuelve dict: sha256 -> {familia, first_seen, file_type}
-    """
     meta = {}
     if not ruta_csv.exists():
         print(f"[=] No hay metadatos en {ruta_csv}: seguire sin familia ni fecha.")
@@ -151,30 +119,19 @@ def cargar_metadatos(ruta_csv):
     return meta
 
 
-# -------------------------------------------------------------------- main ---
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--grupo", default="malware", choices=["malware", "goodware"])
-    ap.add_argument("--origen", default=None,
-                    help="Directorio con binarios ya extraidos (para goodware). "
-                         "Si no se indica, se procesan los ZIP de $BASE/zips/")
-    ap.add_argument("--max", type=int, default=None, metavar="N",
-                    help="Submuestreo aleatorio de N muestras (semilla fija). "
-                         "Sin esta opcion se procesan todas.")
-    ap.add_argument("--tmpdir", default=None,
-                    help="Directorio temporal para la extraccion. Por defecto "
-                         "$BASE/tmp, para no llenar /tmp si esta en RAM.")
-    ap.add_argument("--solo-contar", action="store_true",
-                    help="Extrae y cuenta cuantos PE unicos hay, sin copiar nada "
-                         "al corpus. Util para dimensionar antes de decidir.")
+    ap.add_argument("--origen", default=None)
+    ap.add_argument("--max", type=int, default=None, metavar="N")
+    ap.add_argument("--tmpdir", default=None)
+    ap.add_argument("--solo-contar", action="store_true")
     args = ap.parse_args()
 
     destino_corpus = BASE / "corpus" / args.grupo
     destino_corpus.mkdir(parents=True, exist_ok=True)
     meta = cargar_metadatos(BASE / "meta" / "full.csv") if args.grupo == "malware" else {}
 
-    # --- Reunir los ficheros candidatos ---
     tmp = None
     if args.origen:
         raiz = Path(args.origen)
@@ -185,7 +142,7 @@ def main():
         tmp = Path(tempfile.mkdtemp(prefix="corpus_", dir=str(raiz_tmp)))
         zips = sorted((BASE / "zips").glob("*.zip"))
         if not zips:
-            print(f"[!] No hay ZIP en {BASE/'zips'}. Descargalos primero.")
+            print(f"[!] No hay ZIP en {BASE/'zips'}.")
             sys.exit(1)
         print(f"[*] Extrayendo {len(zips)} lotes ...")
         for z in zips:
@@ -198,7 +155,7 @@ def main():
     print(f"[*] {len(candidatos)} ficheros extraidos. Filtrando PE y deduplicando ...")
 
     filas, vistos = [], set()
-    reservados = []          # PE unicos encontrados, antes de decidir cuales copiar
+    reservados = []
     descartes = {"no_pe": 0, "duplicado": 0, "grande": 0, "vacio": 0}
 
     for p in candidatos:
@@ -223,7 +180,6 @@ def main():
         vistos.add(sha)
         reservados.append((p, sha, tam, info))
 
-    # --- Submuestreo aleatorio reproducible ---
     universo = len(reservados)
     if args.max and universo > args.max:
         rnd = random.Random(SEMILLA)
@@ -232,7 +188,6 @@ def main():
         print(f"[*] PE unicos disponibles (universo) : {universo}")
         print(f"[*] Submuestreo aleatorio a          : {args.max} (semilla {SEMILLA})")
         print(f"[*] Fraccion de muestreo             : {100*args.max/universo:.1f} %")
-        print("    Anota estas tres cifras: van en la seccion de metodologia.")
 
     if args.solo_contar:
         print("")
@@ -263,7 +218,6 @@ def main():
             "nombre_original": p.name,
         })
 
-    # --- Escribir corpus.csv (acumulativo entre grupos) ---
     salida = BASE / "meta" / "corpus.csv"
     existentes = []
     if salida.exists():
